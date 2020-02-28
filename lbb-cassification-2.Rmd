@@ -9,22 +9,232 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+# Import Library
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r message=FALSE}
+# Data wrangling Library
+library(tidyverse)
+library(dplyr) 
+# Visualize data
+library(ggplot2)
+library(inspectdf)
+library(GGally)
+# Naive Bayes 
+library(e1071)
+# Splitting Data
+library(rsample)
+# Random Forest
+library(randomForest)
+# Smote for unbalanced data
+library(DMwR)
+# ROCR
+library(ROCR)
+# Confussion Matrix
+library(caret)
 ```
 
-## Including Plots
+```{r}
+telemark <- read_csv2("data/bank-full.csv")
+```
+ 
+```{r}
+glimpse(telemark)
+```
+Input variables:   
+1. `age`: age (numeric)   
+2. `job` : type of job (categorical: "admin.","unknown","unemployed","management","housemaid","entrepreneur","student", "blue-collar","self-employed","retired","technician","services")  
+3. `marital` : marital status (categorical: "married","divorced","single"; note: "divorced" means divorced or widowed)   
+4. `education` : education (categorical: "unknown","secondary","primary","tertiary")   
+5. `default`: has credit in default? (binary: "yes","no")   
+6. `balance`: average yearly balance, in euros (numeric)   
+7. `housing`: has housing loan? (binary: "yes","no")   
+8. `loan`: has personal loan? (binary: "yes","no")   
+9. `contact`: contact communication type (categorical: "unknown","telephone","cellular")    
+10. `day`: last contact day of the month (numeric)   
+11. `month`: last contact month of year (categorical: "jan", "feb", "mar", ..., "nov", "dec")   
+12. `duration`: last contact duration, in seconds (numeric)   
+13. `campaign`: number of contacts performed during this campaign and for this client (numeric, includes last contact)   
+14. `pdays`: number of days that passed by after the client was last contacted from a previous campaign (numeric, -1 means client was not previously contacted)   
+15. `previous`: number of contacts performed before this campaign and for this client (numeric)   
+16. `poutcome`: outcome of the previous marketing campaign (categorical: "unknown","other","failure","success")   
+17. `y`: has the client subscribed a term deposit? (binary: "yes","no")
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+
+
+```{r}
+table(is.na(telemark))
+```
+ 
+```{r}
+telemark <- telemark %>% 
+  mutate(job = as.factor(job),
+         marital = as.factor(marital),
+         education = as.factor(education),
+         default = as.factor(default),
+         housing = as.factor(housing),
+         loan = as.factor(loan),
+         contact = as.factor(contact),
+         month = as.factor(month),
+         poutcome = as.factor(poutcome),
+         subscribe = as.factor(y)) %>% 
+  select(-c(y))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# Exploratory Data Analysis
+
+```{r}
+summary(telemark)
+```
+
+
+```{r}
+show_plot(inspect_cor(subset(telemark, select = -c(subscribe))))
+```
+
+```{r}
+ggcorr(telemark, label = T)
+```
+
+
+```{r}
+numericCols <- unlist(lapply(telemark, is.numeric))
+show_plot(inspect_num(telemark[,numericCols]))
+```
+
+```{r}
+prop.table(table(telemark$subscribe))
+```
+
+
+```{r}
+set.seed(1)
+split <- initial_split(data = telemark, prop = 0.8, strata = subscribe)
+telemark_train <- training(split)
+telemark_test <- testing(split)
+```
+
+```{r}
+prop.table(table(telemark_train$subscribe))
+```
+
+```{r}
+# telemark_train_upsample <- upSample(x = telemark_train[, -17], y = telemark_train$subscribe, yname = "subscribe")
+telemark_train_upsample <- SMOTE(subscribe ~ ., as.data.frame(telemark_train), perc.over = 100, perc.under = 200)
+```
+
+```{r}
+prop.table(table(telemark_train_upsample$subscribe))
+```
+
+
+```{r}
+model_naive <- naiveBayes(subscribe ~ ., data = telemark_train_upsample)
+```
+
+```{r}
+naive_prediction <- predict(model_naive, telemark_test)
+naive_prediction_raw <- as.data.frame(predict(model_naive, telemark_test, type = "raw"))
+
+naive_prediction_raw <- naive_prediction_raw %>%
+  mutate(no = round(no,4),
+         yes = round(yes,4))
+```
+
+
+```{r}
+naive_matrix <- confusionMatrix(naive_prediction, telemark_test$subscribe)
+table <- as.table(naive_matrix)
+table <- as.data.frame(table)
+
+table %>% ggplot(aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), fontface = "bold", color = "white") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r}
+matrix_1 <- as.data.frame(t(as.matrix(naive_matrix, what = "overall")))
+matrix_2 <- as.data.frame(t(as.matrix(naive_matrix, what = "classes")))
+matrix <- cbind(matrix_1, matrix_2)
+matrix %>% select(Accuracy, Sensitivity, Specificity, "Pos Pred Value") %>% 
+  t()
+
+```
+
+```{r}
+# ROC
+naive_roc <- data.frame(prediction = naive_prediction_raw[,2],
+                        trueclass = as.numeric(telemark_test$subscribe=="yes"))
+head(naive_roc)
+```
+
+
+```{r}
+naive_roc <- prediction(naive_roc$prediction, naive_roc$trueclass) 
+
+# ROC curve
+plot(performance(naive_roc, "tpr", "fpr"),
+     main = "ROC")
+abline(a = 0, b = 1)
+```
+
+```{r}
+# AUC
+auc_ROCR_n <- performance(naive_roc, measure = "auc")
+auc_ROCR_n <- auc_ROCR_n@y.values[[1]]
+auc_ROCR_n
+```
+
+
+
+```{r}
+library(plotly)
+
+
+
+# model tuning - metrics function
+metrics <- function(cutoff, prob, ref, postarget, negtarget) 
+{
+  predict <- as.factor(ifelse(prob >= cutoff, postarget, negtarget))
+  conf <- caret::confusionMatrix(predict , ref, positive = postarget)
+  acc <- conf$overall[1]
+  rec <- conf$byClass[1]
+  prec <- conf$byClass[3]
+  spec <- conf$byClass[2]
+  mat <- t(as.matrix(c(rec , acc , prec, spec))) 
+  colnames(mat) <- c("recall", "accuracy", "precicion", "specificity")
+  return(mat)
+}
+co <- seq(0.01,0.99,length=100)
+result <- matrix(0,100,4)
+
+# apply function metrics
+for(i in 1:100){
+  result[i,] = metrics(cutoff = co[i], 
+                     prob = naive_prediction_raw$yes, 
+                     ref = as.factor(ifelse(telemark_test$subscribe == "yes", 1, 0)), 
+                     postarget = "1", 
+                     negtarget = "0")
+}
+
+# visualize
+ggplotly(tibble("Recall" = result[,1],
+           "Accuracy" = result[,2],
+           "Precision" = result[,3],
+           "Specificity" = result[,4],
+                   "Cutoff" = co) %>% 
+  gather(key = "Metrics", value = "value", 1:4) %>% 
+  ggplot(aes(x = Cutoff, y = value, col = Metrics)) +
+  geom_line(lwd = 1.5) +
+  scale_color_manual(values = c("darkred","darkgreen","orange", "blue")) +
+  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  labs(title = "Tradeoff Model Perfomance") +
+  theme_minimal() +
+  theme(legend.position = "top",
+        panel.grid.minor.y = element_blank(),
+        panel.grid.minor.x = element_blank()))
+```
+
