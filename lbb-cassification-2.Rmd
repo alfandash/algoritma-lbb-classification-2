@@ -31,6 +31,8 @@ library(DMwR)
 library(ROCR)
 # Confussion Matrix
 library(caret)
+# Decision Tree
+library(partykit)
 ```
 
 ```{r}
@@ -236,5 +238,27 @@ ggplotly(tibble("Recall" = result[,1],
   theme(legend.position = "top",
         panel.grid.minor.y = element_blank(),
         panel.grid.minor.x = element_blank()))
+```
+
+```{r}
+#Tuning Threshold
+naive_prediction_tuning <- naive_prediction_raw %>%
+  mutate(label = as.factor(ifelse(no >= 0.65, "no", "yes"))) %>% 
+  select(label)
+
+confusionMatrix(naive_prediction_tuning$label, naive_prediction)
+
+```
+
+```{r}
+model_dtree <- ctree(subscribe ~ ., telemark_train_upsample)
+```
+
+```{r}
+dtree_prediction <- predict(model_dtree, telemark_test)
+```
+
+```{r}
+confusionMatrix(dtree_prediction, telemark_test$subscribe)
 ```
 
