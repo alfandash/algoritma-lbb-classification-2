@@ -262,3 +262,18 @@ dtree_prediction <- predict(model_dtree, telemark_test)
 confusionMatrix(dtree_prediction, telemark_test$subscribe)
 ```
 
+```{r}
+model_dtree_tuning <- ctree(subscribe ~ ., telemark_train_upsample,
+                            control = ctree_control(mincriterion = 0.1, minsplit = 100, minbucket = 60))
+
+dtree_prediction_tuning <- predict(model_dtree_tuning, telemark_test)
+```
+
+```{r}
+confusionMatrix(dtree_prediction_tuning, telemark_test$subscribe)
+```
+
+```{r}
+mode_rforest <_
+```
+
