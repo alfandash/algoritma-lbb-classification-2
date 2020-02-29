@@ -187,11 +187,13 @@ telemark_train <- training(split)
 telemark_test <- testing(split)
 ```
 
-
+Checking proportion of target variable on train data
 
 ```{r}
 prop.table(table(telemark_train$subscribe))
 ```
+
+found target variable still imbalance, so we will try to make it balance using SMOTE method. SMOTE is a oversampling technique which synthesizes a new minority instance between a pair of one minority instance and one of its K nearest neighbor. [see](https://www.jair.org/media/953/live-953-2037-jair.pdf) Other techniques adopt this concept with other criteria in order to generate balanced dataset for class imbalance problem.
 
 ```{r}
 telemark_train_upsample <- SMOTE(subscribe ~ ., as.data.frame(telemark_train), perc.over = 100, perc.under = 200)
@@ -201,9 +203,25 @@ telemark_train_upsample <- SMOTE(subscribe ~ ., as.data.frame(telemark_train), p
 prop.table(table(telemark_train_upsample$subscribe))
 ```
 
+We already get balance proportion using SMOTE, then we go throught predictive modelling
+
+# Modelling
+
+We will try to build predictive classification model using different algorithm and method. We will comparing three model and compare result and perfomance of Naive Bayes, Decision Tree, Random Forest
+
+## Naive Bayes 
+
+Based on our EDA we found some of our varibles or we can say it feature have correlaction with other feature. Another feature are continuous variable which based on this 2 point, it make these dataset not really suitable using Naive Bayes. Even so, we still going and try using Naive Bayes to see the result and we will compared with other models.There are certain characteristics of Naive Bayes that should be considered:   
+
+* Assumes that all features of the dataset are equally important and independent. This allows Naive Bayes to perform faster computation (the algorithms is quite simple).   
+* Prone to bias due to data scarcity. In some cases, our data may have a distribution where scarce observations lead to probabilities approximating close to 0 or 1, which introduces a heavy bias into our model that could lead to poor performance on unseen data.   
+* More appropriate for data with categoric predictors. This is because Naive Bayes is sensitive to data scarcity. Meanwhile, a continuous variable might contain really scarce or even only one observation for certain value.   
+* Apply Laplace estimator/smoothing for data scarcity problem. Laplace estimator proposes the adding of a small number (usually 1) to each of the counts in the frequency table. This subsequently ensures that each class-feature combination has a non-zero probability of occurring.
+
+We need build our model, and in this case we also apply Laplace Estimator
 
 ```{r}
-model_naive <- naiveBayes(subscribe ~ ., data = telemark_train_upsample)
+model_naive <- naiveBayes(subscribe ~ ., data = telemark_train_upsample, laplace = 1)
 ```
 
 ```{r}
@@ -233,6 +251,13 @@ naive_matrix <- matrix_result(naive_matrix, "Naive Bayes")
 naive_matrix
 ```
 
+These table explain:
+* Accuracy: the ability to correctly predict both classes from the total observation.   
+* Precision: the ability to correctly predict the positive class from the total predicted-positive class (false positive is low).   
+* Recall: the ability to correctly predict the positive class from the total actual-positive class (false negative is low).   
+* Specificity: the ability to correctly predict the negative class from the total actual-negative class.   
+
+
 ```{r}
 # ROC
 naive_roc <- data.frame(prediction = naive_prediction_raw[,2],
@@ -250,13 +275,28 @@ plot(performance(naive_roc_pred, "tpr", "fpr"),
 abline(a = 0, b = 1)
 ```
 
+The ROC is a curve that shows the performance of the classification model for all thresholds. ROC represents graphics from:
+
+* `Recall / sensitivity` (true positive rate) on the` y` axis.
+* `1-specificity` (false positive rate) on the` x` axis.
+
 ```{r}
 # AUC
-auc_ROCR_n <- performance(naive_roc_pred, measure = "auc")
-auc_ROCR_n <- auc_ROCR_n@y.values[[1]]
-auc_ROCR_n
+auc <- performance(naive_roc_pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
 ```
 
+AUC is the area under the ROC curve. AUC values indicate the success of the model predicting / differentiating the two classes. The area value has an interval between 0 to 1. If the AUC value is close to 1, it means that the classification model is able to predict / distinguish the two classes well. However, if the AUC value is close to 0.5 it means that the classification model is not able to predict / distinguish the two classes well.
+
+* AUC value close to 1: the classification model is able to predict / distinguish the two classes well   
+* AUC values close to 0.5: the classification model is not able to predict / distinguish the two classes well   
+
+Based on result ROC and AUC, we get our ROC curce show good separation with AUC score 0.8456519 it mean we have chance to improve this Naive Bayes Model. In Our Naive Bayes model result Accuracy, Sensitivity, Specificity is quite ok, but our positive pred value still small 30%.
+
+In our case we are focus "No" class mean we dont want telemarketing call person who predict didnt want buy product or service offer from telemarketing, it means we are focus on Sensitivity parameter which mean our Naive Bayes already give us good result.
+
+Based on our AUC score we still can improve our model, and one of method to tuning model is change the threshold.
 
 
 ```{r}
@@ -292,10 +332,12 @@ ggplotly(tibble("Recall" = result[,1],
         panel.grid.minor.x = element_blank()))
 ```
 
+From plot above, we get information break even point is around 0.55. we will set it around 0.52 because we are focusing on Recall parameter, meanwhile we still want other paramaeter get good result.
+
 ```{r}
 #Tuning Threshold
 naive_prediction_tuning <- naive_prediction_raw %>%
-  mutate(label = as.factor(ifelse(yes >= 0.65, "yes", "no"))) %>% 
+  mutate(label = as.factor(ifelse(yes >= 0.52, "yes", "no"))) %>% 
   select(label)
 ```
 
@@ -306,9 +348,28 @@ naive_matrix <- matrix_result(naive_matrix_tuning, "Naive Bayes Tuning")
 naive_matrix
 ```
 
+## Decision Tree
+
+Decision tree model is one of the tree-based models which has the major benefit of being interpretable. Decision tree is an algorithm that will make a set of rules visualized in a diagram that resembles a tree. There are certain characteristics of decision tree model:   
+
+* Perform well on both numerical and categorical variable.   
+* All predictors are assumed to interact.   
+* Quite robust to the problem of multicollinearity. A decision tree will choose a variable that has the highest information gain in one split, whereas a method such as logistic regression would have used both.   
+* Robust and insensitive to outliers. Splitting will happen at a condition where it maximizes the homogeneity within resulting groups. Outliers will have little influence on the splitting process.
+
+let build decision tree model.
+
 ```{r}
 model_dtree <- ctree(subscribe ~ ., telemark_train_upsample)
 ```
+
+```{r}
+width(model_dtree)
+depth(model_dtree)
+```
+
+We found our decision tree models create complicated tree using our train dataset. it shows from Width 139 it mean total Leaf Nodes, and 14 deoth it mean Internal Nodes.
+
 
 ```{r}
 dtree_prediction <- predict(model_dtree, telemark_test)
