@@ -19,6 +19,7 @@ library(dplyr)
 library(ggplot2)
 library(inspectdf)
 library(GGally)
+library(plotly)
 # Naive Bayes 
 library(e1071)
 # Splitting Data
@@ -34,6 +35,14 @@ library(caret)
 # Decision Tree
 library(partykit)
 ```
+
+
+# Import Function 
+```{r}
+source("matrix_result.R")
+source("metrics.R")
+```
+
 
 ```{r}
 telemark <- read_csv2("data/bank-full.csv")
@@ -145,7 +154,7 @@ naive_prediction_raw <- naive_prediction_raw %>%
 
 
 ```{r}
-naive_matrix <- confusionMatrix(naive_prediction, telemark_test$subscribe)
+naive_matrix <- confusionMatrix(naive_prediction, telemark_test$subscribe, positive = "yes")
 table <- as.table(naive_matrix)
 table <- as.data.frame(table)
 
@@ -157,12 +166,8 @@ table %>% ggplot(aes(x = Prediction, y = Reference, fill = Freq)) +
 ```
 
 ```{r}
-matrix_1 <- as.data.frame(t(as.matrix(naive_matrix, what = "overall")))
-matrix_2 <- as.data.frame(t(as.matrix(naive_matrix, what = "classes")))
-matrix <- cbind(matrix_1, matrix_2)
-matrix %>% select(Accuracy, Sensitivity, Specificity, "Pos Pred Value") %>% 
-  t()
-
+naive_matrix <- matrix_result(naive_matrix, "Naive Bayes")
+naive_matrix
 ```
 
 ```{r}
@@ -174,17 +179,17 @@ head(naive_roc)
 
 
 ```{r}
-naive_roc <- prediction(naive_roc$prediction, naive_roc$trueclass) 
+naive_roc_pred <- prediction(naive_roc$prediction, naive_roc$trueclass) 
 
 # ROC curve
-plot(performance(naive_roc, "tpr", "fpr"),
+plot(performance(naive_roc_pred, "tpr", "fpr"),
      main = "ROC")
 abline(a = 0, b = 1)
 ```
 
 ```{r}
 # AUC
-auc_ROCR_n <- performance(naive_roc, measure = "auc")
+auc_ROCR_n <- performance(naive_roc_pred, measure = "auc")
 auc_ROCR_n <- auc_ROCR_n@y.values[[1]]
 auc_ROCR_n
 ```
@@ -192,23 +197,7 @@ auc_ROCR_n
 
 
 ```{r}
-library(plotly)
-
-
-
 # model tuning - metrics function
-metrics <- function(cutoff, prob, ref, postarget, negtarget) 
-{
-  predict <- as.factor(ifelse(prob >= cutoff, postarget, negtarget))
-  conf <- caret::confusionMatrix(predict , ref, positive = postarget)
-  acc <- conf$overall[1]
-  rec <- conf$byClass[1]
-  prec <- conf$byClass[3]
-  spec <- conf$byClass[2]
-  mat <- t(as.matrix(c(rec , acc , prec, spec))) 
-  colnames(mat) <- c("recall", "accuracy", "precicion", "specificity")
-  return(mat)
-}
 co <- seq(0.01,0.99,length=100)
 result <- matrix(0,100,4)
 
@@ -243,11 +232,15 @@ ggplotly(tibble("Recall" = result[,1],
 ```{r}
 #Tuning Threshold
 naive_prediction_tuning <- naive_prediction_raw %>%
-  mutate(label = as.factor(ifelse(no >= 0.65, "no", "yes"))) %>% 
+  mutate(label = as.factor(ifelse(yes >= 0.65, "yes", "no"))) %>% 
   select(label)
+```
 
-confusionMatrix(naive_prediction_tuning$label, naive_prediction)
 
+```{r}
+naive_matrix_tuning <- confusionMatrix(naive_prediction_tuning$label, naive_prediction, positive = "yes")
+naive_matrix <- matrix_result(naive_matrix_tuning, "Naive Bayes Tuning")
+naive_matrix
 ```
 
 ```{r}
@@ -259,7 +252,9 @@ dtree_prediction <- predict(model_dtree, telemark_test)
 ```
 
 ```{r}
-confusionMatrix(dtree_prediction, telemark_test$subscribe)
+dtree_matrix <- confusionMatrix(dtree_prediction, telemark_test$subscribe, positive = "yes")
+dtree_matrix <- matrix_result(dtree_matrix, "Decision Tree")
+dtree_matrix
 ```
 
 ```{r}
@@ -270,10 +265,123 @@ dtree_prediction_tuning <- predict(model_dtree_tuning, telemark_test)
 ```
 
 ```{r}
-confusionMatrix(dtree_prediction_tuning, telemark_test$subscribe)
+dtree_matrix_tuning <- confusionMatrix(dtree_prediction_tuning, telemark_test$subscribe)
+dtree_matrix_tuning <- matrix_result(dtree_matrix_tuning, "Decision Tree Tuning")
+dtree_matrix_tuning
 ```
 
 ```{r}
-mode_rforest <_
+ctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 3)
 ```
+
+```{r}
+# model_rforest <- train(subscribe ~ ., data = telemark_train_upsample, method = "rf", trControl = ctrl, ntree = 100)
+# saveRDS(model_rforest, file = "model_rforest.RDS")
+model_rforest <- readRDS("model_rforest.RDS")
+```
+
+```{r}
+rforest_predict <- predict(model_rforest, telemark_test)
+rforest_predict_raw <- predict(model_rforest, telemark_test, type = "prob")
+```
+
+```{r}
+plot(model_rforest$finalModel)
+legend("topright", colnames(model_rforest$finalModel$err.rate),col=1:6,cex=0.8,fill=1:6)
+```
+
+
+```{r}
+rforest_matrix <- confusionMatrix(rforest_predict, telemark_test$subscribe, positive = "yes")
+table <- as.table(rforest_matrix)
+table <- as.data.frame(table)
+
+table %>% ggplot(aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), fontface = "bold", color = "white") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+
+```{r}
+rforest_matrix <- matrix_result(rforest_matrix, "Random Forest")
+rforest_matrix
+```
+
+
+```{r}
+# ROC
+forest_roc <- data.frame(prediction = rforest_predict_raw[,2],
+                        trueclass = as.numeric(telemark_test$subscribe=="yes"))
+head(forest_roc)
+```
+
+
+```{r}
+forest_rocz_prediction <- prediction(forest_roc$prediction, forest_roc$trueclass) 
+
+# ROC curve
+plot(performance(forest_rocz_prediction, "tpr", "fpr"),
+     main = "ROC")
+abline(a = 0, b = 1)
+```
+
+```{r}
+# AUC
+auc_ROCR_n <- performance(forest_rocz_prediction, measure = "auc")
+auc_ROCR_n <- auc_ROCR_n@y.values[[1]]
+auc_ROCR_n
+```
+
+
+
+```{r}
+co <- seq(0.01,0.99,length=100)
+result <- matrix(0,100,4)
+
+# apply function metrics
+for(i in 1:100){
+  result[i,] = metrics(cutoff = co[i], 
+                     prob = rforest_predict_raw$yes, 
+                     ref = as.factor(ifelse(telemark_test$subscribe == "yes", 1, 0)), 
+                     postarget = "1", 
+                     negtarget = "0")
+}
+
+# visualize
+ggplotly(tibble("Recall" = result[,1],
+           "Accuracy" = result[,2],
+           "Precision" = result[,3],
+           "Specificity" = result[,4],
+                   "Cutoff" = co) %>% 
+  gather(key = "Metrics", value = "value", 1:4) %>% 
+  ggplot(aes(x = Cutoff, y = value, col = Metrics)) +
+  geom_line(lwd = 1.5) +
+  scale_color_manual(values = c("darkred","darkgreen","orange", "blue")) +
+  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  labs(title = "Tradeoff Model Perfomance") +
+  theme_minimal() +
+  theme(legend.position = "top",
+        panel.grid.minor.y = element_blank(),
+        panel.grid.minor.x = element_blank()))
+```
+
+
+```{r}
+#Tuning Threshold
+rforest_predict_tuning <- rforest_predict_raw %>%
+  mutate(label = as.factor(ifelse(yes >= 0.52, "yes", "no"))) %>% 
+  select(label)
+```
+
+
+```{r}
+rforest_matrix_tuning <- confusionMatrix(naive_prediction_tuning$label, naive_prediction, positive = "yes")
+rforest_matrix_tuning <- matrix_result(rforest_matrix_tuning, "Random Forest Tuning")
+rforest_matrix_tuning
+```
+
+
 
