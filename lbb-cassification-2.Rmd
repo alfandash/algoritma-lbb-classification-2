@@ -2,56 +2,95 @@
 title: "lbb-classification-2"
 author: "Alfan"
 date: "2/28/2020"
-output: html_document
+output: 
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Import Library
+# Intro
+
+## Background
+
+Telemarketing is a method of direct marketing which a person (can be sales) prospective customers to buy products or services, either over the phone or through face to face or web conferencing appointment. Telemarketing can also include recoreded sales pithes programmed to be played over the phone by automatic dialing.
+
+Bank is one of the organisation use telemarketing method for selling banking products or services. telemarketing is a popular method used by bank to selling, because bank products and services sometimes too complicated for some users to understand. It more easy to users or target user to understand products or service if it explain directly. One advanteage of telemarketing by person, target users can directly asking question, if they didnt understand something.
+
+Nowdays, Telemarketing has been negatively associated with various scams and frauds, such as pyramid schemes, and with deceptively overpriced products and services. Fraudulent telemarketing companies are frequently referred to as "telemarketing boiler rooms" or simply "boiler rooms". Telemarketing is often criticized as an unethical business practice due to the perception of high-pressure sales techniques during unsolicited calls. Telemarketers marketing telephone companies may participate in telephone slamming, the practice of switching a customer's telephone service without their knowledge or authorization.
+
+Bank as financing organisation really care about good reputation and good branding, and one of bad thing do telemarketing can interfere reputation it self. So we need find out which our target will not buy product or service if bank offer product or service using telemarketing. It can help protect bank reputation by not disturbing target that we already know will not buy the product.
+
+## Analysis Method
+
+In this case we will use machine learning to understand pattern and predict classification or label, we use several predictive model to predict using training and testing data. Predictive model we use is, Naive Bayes Classifier, Decision Tree, and Random Forest. 
+
+We will compare the result of predction and see the performance from each mode. This 3 model are categorized as supervised learning. Supervised learning popular to predict pattern, this pattern can learn from train data and do ETL (Extract Transform Load) to get feature information. Based from feature we will compare with clasification patter from model get from labeled data to get final prediction.
+
+# Data Preparation
+
+## Import Library
 
 ```{r message=FALSE}
 # Data wrangling Library
 library(tidyverse)
 library(dplyr) 
+
 # Visualize data
 library(ggplot2)
 library(inspectdf)
 library(GGally)
 library(plotly)
+
 # Naive Bayes 
 library(e1071)
+
 # Splitting Data
 library(rsample)
+
 # Random Forest
 library(randomForest)
+
 # Smote for unbalanced data
 library(DMwR)
+
 # ROCR
 library(ROCR)
+
 # Confussion Matrix
 library(caret)
+
 # Decision Tree
 library(partykit)
 ```
 
 
-# Import Function 
+## Import Function 
+
 ```{r}
 source("matrix_result.R")
 source("metrics.R")
 ```
 
 
-```{r}
+## Read Data
+
+Telemarketing dataset was obtained from UCI Machine Learning Repository, The data is related with direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed.
+
+```{r message=FALSE}
 telemark <- read_csv2("data/bank-full.csv")
 ```
  
 ```{r}
 glimpse(telemark)
 ```
-Input variables:   
+
+Column Description:   
 1. `age`: age (numeric)   
 2. `job` : type of job (categorical: "admin.","unknown","unemployed","management","housemaid","entrepreneur","student", "blue-collar","self-employed","retired","technician","services")  
 3. `marital` : marital status (categorical: "married","divorced","single"; note: "divorced" means divorced or widowed)   
@@ -70,13 +109,16 @@ Input variables:
 16. `poutcome`: outcome of the previous marketing campaign (categorical: "unknown","other","failure","success")   
 17. `y`: has the client subscribed a term deposit? (binary: "yes","no")
 
+# Data Wrangling
 
-
+Missing Value (NA) is general problem from dataaset, there's some way to solve the problem. Based on several refrence say that there is NO good way to deal with missing data. So before we going forward to next step, we should check missing value.
 
 ```{r}
 table(is.na(telemark))
 ```
- 
+
+The data has no missing value, so we doesnt need any thing with missing value. Based on column description some our imported variables have incorrect data types. Change the data type refer to column description.
+
 ```{r}
 telemark <- telemark %>% 
   mutate(job = as.factor(job),
@@ -92,12 +134,36 @@ telemark <- telemark %>%
   select(-c(y))
 ```
 
-# Exploratory Data Analysis
+There's some of data variables is numeric, we can visualize the histogram to get data distribution from them. 
+
+```{r}
+numericCols <- unlist(lapply(telemark, is.numeric))
+show_plot(inspect_num(telemark[,numericCols]))
+```
+
+Our target variables before are "Y" and we change it to "subscribe", it make us more easy to understand which observer that want to subscribe any product or services when get call from telemarketing. 
+
+```{r}
+levels(telemark$subscribe)
+```
+
+Our target variables consist of 2 levels "yes" means users agree to subscribe or buy product and "no" means users didnt agree or reject offers from telemarketing. Lets take look at the overall data structure, 
 
 ```{r}
 summary(telemark)
 ```
 
+# Exploratory Data Analysis
+
+When conducting a supervised classification with machine learning algorithms such as Random Forests, one recommended practice is to work with a balanced classification dataset. Check proportion of our target variables `subscribe`
+
+```{r}
+prop.table(table(telemark$subscribe))
+```
+
+We found that our target variable `subsribe` is Imbalanced. It mean data refers to a situation where the number of observations is not the same for all the classes in a classification dataset. To avoid loss of variance, we will use upsampling to balance the proportion.
+
+Lets take look correlation between predictor variables
 
 ```{r}
 show_plot(inspect_cor(subset(telemark, select = -c(subscribe))))
@@ -107,15 +173,11 @@ show_plot(inspect_cor(subset(telemark, select = -c(subscribe))))
 ggcorr(telemark, label = T)
 ```
 
+Two plots above explain, there are some predictor variables have correlation with other predictor variable. These variables are `previous` with `pdays`, `campaign` with `day`, and `balance` with `age`. This didnt make decision us to take out the variables from dataset, but only warn maybe it can cause some models will not work porperly like Naive Bayes.
 
-```{r}
-numericCols <- unlist(lapply(telemark, is.numeric))
-show_plot(inspect_num(telemark[,numericCols]))
-```
+# Cross Validation
 
-```{r}
-prop.table(table(telemark$subscribe))
-```
+Cross-validation (CV) is a statistical method that can be used to evaluate the performance of models or algorithms where the data is separated into two subsets namely learning process data and validation / evaluation data. In this case we will seperate data with proportion 80% dataset for data training and rest 20% we use as data test.
 
 
 ```{r}
@@ -125,12 +187,13 @@ telemark_train <- training(split)
 telemark_test <- testing(split)
 ```
 
+
+
 ```{r}
 prop.table(table(telemark_train$subscribe))
 ```
 
 ```{r}
-# telemark_train_upsample <- upSample(x = telemark_train[, -17], y = telemark_train$subscribe, yname = "subscribe")
 telemark_train_upsample <- SMOTE(subscribe ~ ., as.data.frame(telemark_train), perc.over = 100, perc.under = 200)
 ```
 
