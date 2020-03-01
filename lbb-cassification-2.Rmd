@@ -1,5 +1,5 @@
 ---
-title: "lbb-classification-2"
+title: "Bank Telemarketing: Classification Machine Learning"
 author: "Alfan"
 date: "2/28/2020"
 output: 
@@ -30,7 +30,7 @@ Bank as financing organisation really care about good reputation and good brandi
 
 In this case we will use machine learning to understand pattern and predict classification or label, we use several predictive model to predict using training and testing data. Predictive model we use is, Naive Bayes Classifier, Decision Tree, and Random Forest. 
 
-We will compare the result of predction and see the performance from each mode. This 3 model are categorized as supervised learning. Supervised learning popular to predict pattern, this pattern can learn from train data and do ETL (Extract Transform Load) to get feature information. Based from feature we will compare with clasification patter from model get from labeled data to get final prediction.
+We will compare the result of prediction and see the performance from each mode. This 3 model are categorized as supervised learning. Supervised learning popular to predict pattern, this pattern can learn from train data and do ETL (Extract Transform Load) to get feature information. Based from feature we will compare with clasification patter from model get from labeled data to get final prediction.
 
 # Data Preparation
 
@@ -344,8 +344,8 @@ naive_prediction_tuning <- naive_prediction_raw %>%
 
 ```{r}
 naive_matrix_tuning <- confusionMatrix(naive_prediction_tuning$label, naive_prediction, positive = "yes")
-naive_matrix <- matrix_result(naive_matrix_tuning, "Naive Bayes Tuning")
-naive_matrix
+naive_matrix_tuning <- matrix_result(naive_matrix_tuning, "Naive Bayes Tuning")
+naive_matrix_tuning
 ```
 
 ## Decision Tree
@@ -368,8 +368,7 @@ width(model_dtree)
 depth(model_dtree)
 ```
 
-We found our decision tree models create complicated tree using our train dataset. it shows from Width 139 it mean total Leaf Nodes, and 14 deoth it mean Internal Nodes.
-
+We found our decision tree models create complicated tree using our train dataset. it shows from Width 139 it mean total Leaf Nodes, and 14 deoth it mean Internal Nodes. After we train it, we can use to predict using our data test.
 
 ```{r}
 dtree_prediction <- predict(model_dtree, telemark_test)
@@ -380,6 +379,8 @@ dtree_matrix <- confusionMatrix(dtree_prediction, telemark_test$subscribe, posit
 dtree_matrix <- matrix_result(dtree_matrix, "Decision Tree")
 dtree_matrix
 ```
+
+In Our Decision model result Accuracy, Sensitivity, Specificity is quite ok, but our positive pred value still small 39%. We still can improve model by tuning it.
 
 ```{r}
 model_dtree_tuning <- ctree(subscribe ~ ., telemark_train_upsample,
@@ -394,6 +395,29 @@ dtree_matrix_tuning <- matrix_result(dtree_matrix_tuning, "Decision Tree Tuning"
 dtree_matrix_tuning
 ```
 
+After we tuning the models we improve the result, and Pos Pred Value incerase significantly from 39% to 96%. This result is more than enought, and it really good. so we didnt do any tuning to make it better
+
+## Random Forest
+
+Random forests are based on a simple idea: 'the wisdom of the crowd'. Aggregate of the results of multiple predictors gives a better prediction than the best individual predictor. A group of predictors is called an ensemble. Thus, this technique is called Ensemble Learning.
+
+To improve our model, we can train a group of Decision Tree classifiers, each on a different random subset of the train set. To make a prediction, we just obtain the predictions of all individuals trees, then predict the class that gets the most votes. This technique is called Random Forest.
+
+One wekness of Random Forest Model is are easy to get over feet with train data, to decrease possibility get overfitted model we can use K-Fold Cross Validation. K- Fold Cross-validation is a resampling procedure used to evaluate machine learning models on a limited data sample.
+
+The procedure has a single parameter called k that refers to the number of groups that a given data sample is to be split into. As such, the procedure is often called k-fold cross-validation. When a specific value for k is chosen, it may be used in place of k in the reference to the model, such as k=10 becoming 10-fold cross-validation.
+
+Cross-validation is primarily used in applied machine learning to estimate the skill of a machine learning model on unseen data. That is, to use a limited sample in order to estimate how the model is expected to perform in general when used to make predictions on data not used during the training of the model.
+
+It is a popular method because it is simple to understand and because it generally results in a less biased or less optimistic estimate of the model skill than other methods, such as a simple train/test split. 
+
+```{r fig.align="center", echo=FALSE}
+knitr::include_graphics("./image/kfold.png")
+```
+
+
+Lets implement it in our random forest model
+
 ```{r}
 ctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 3)
 ```
@@ -402,16 +426,32 @@ ctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 3)
 # model_rforest <- train(subscribe ~ ., data = telemark_train_upsample, method = "rf", trControl = ctrl, ntree = 100)
 # saveRDS(model_rforest, file = "model_rforest.RDS")
 model_rforest <- readRDS("model_rforest.RDS")
+model_rforest
 ```
 
+From model summary we have build, we het optimum number of variable considered for splitting at each tree node is 2. Next we will use `varImp()` to get information which feature/variable importance for our random forest model.
+
 ```{r}
-rforest_predict <- predict(model_rforest, telemark_test)
-rforest_predict_raw <- predict(model_rforest, telemark_test, type = "prob")
+varImp(model_rforest)
 ```
+
+We get that `duration` are the most importance variable in our random forest model. and there is other have importance rate more bigger than others is `pdays`, `previous`, `balance`, `age`, `day`.  In practice, the random forest already have out-of-bag estimates (OOB) that can be used as a reliable estimate of its true accuracy on unseen examples. we can check OOB rate in our random forest model
+
+```{r}
+model_rforest$finalModel
+```
+
 
 ```{r}
 plot(model_rforest$finalModel)
 legend("topright", colnames(model_rforest$finalModel$err.rate),col=1:6,cex=0.8,fill=1:6)
+```
+
+We can start our random forest model to our telemarketing dataset test:
+
+```{r}
+rforest_predict <- predict(model_rforest, telemark_test)
+rforest_predict_raw <- predict(model_rforest, telemark_test, type = "prob")
 ```
 
 
@@ -458,7 +498,9 @@ auc_ROCR_n <- auc_ROCR_n@y.values[[1]]
 auc_ROCR_n
 ```
 
+Based on result ROC and AUC, we get our ROC curve show good separation with AUC score 0.9214208 it mean our random forest model almost reach the maximum accuracy. In Our Random Forest model result Accuraacy, Sensitivity, Specificity is good performance and accuracy, but our positive pred value still small 44%.
 
+We will try to tune the threshold to reach more higher score on each metrics, especially sensitivity as our target
 
 ```{r}
 co <- seq(0.01,0.99,length=100)
@@ -496,16 +538,38 @@ ggplotly(tibble("Recall" = result[,1],
 ```{r}
 #Tuning Threshold
 rforest_predict_tuning <- rforest_predict_raw %>%
-  mutate(label = as.factor(ifelse(yes >= 0.52, "yes", "no"))) %>% 
+  mutate(label = as.factor(ifelse(yes >= 0.42, "yes", "no"))) %>% 
   select(label)
 ```
 
 
 ```{r}
-rforest_matrix_tuning <- confusionMatrix(naive_prediction_tuning$label, naive_prediction, positive = "yes")
+rforest_matrix_tuning <- confusionMatrix(rforest_predict_tuning$label, telemark_test$subscribe, positive = "yes")
 rforest_matrix_tuning <- matrix_result(rforest_matrix_tuning, "Random Forest Tuning")
 rforest_matrix_tuning
 ```
 
+# Conclusion 
 
+```{r}
+result <- rbind(naive_matrix, naive_matrix_tuning, dtree_matrix, dtree_matrix_tuning, rforest_matrix, rforest_matrix_tuning)
+result
+```
+
+Based on matrix above, we found Naive Bayes Tuning have specificity 100% and Pos Pred Value 100% it indicate our Naive Bayes that we tuning is over fitted. so we can take out from our comparation 
+
+```{r}
+result <- result[-2,]
+result
+```
+
+Overall our predictive model we has build before, Random Forest gave us highest perfomance with 85% accuracy and also maintain sensitivity, specificity more highest than others. In our case we are focus "No" class mean we dont want telemarketing call person who predict didnt want buy product or service offer from telemarketing, it means we are focus on Sensitivity parameter which mean our Naive Bayes already give us good result. so lets find out which model get highest Sensitivty rate
+
+
+```{r}
+result %>% arrange(desc(Sensitivity))
+```
+
+
+Conclusion is random forest with threshold tuning can gave us best perfomance to predict Sensitivty which we try the best to predict which our target we already know they really dont want to buy bank product. so we bank can maintain reputation by didnt disturb target users.
 
