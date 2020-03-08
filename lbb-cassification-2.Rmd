@@ -1,5 +1,6 @@
 ---
-title: "Bank Telemarketing: Classification Machine Learning"
+title: "Bank Telemarketing"
+subtitle: "Classification Machine Learning"
 author: "Alfan"
 date: "2/28/2020"
 output: 
@@ -9,6 +10,7 @@ output:
     toc_float:
       collapsed: true
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -476,7 +478,7 @@ rforest_matrix
 
 ```{r}
 # ROC
-forest_roc <- data.frame(prediction = rforest_predict_raw[,2],
+forest_roc <- dataauc.frame(prediction = rforest_predict_raw[,2],
                         trueclass = as.numeric(telemark_test$subscribe=="yes"))
 head(forest_roc)
 ```
@@ -572,4 +574,14 @@ result %>% arrange(desc(Sensitivity))
 
 
 Conclusion is random forest with threshold tuning can gave us best perfomance to predict Sensitivty which we try the best to predict which our target we already know they really dont want to buy bank product. so we bank can maintain reputation by didnt disturb target users.
+
+# Source Code
+
+This analysis made for education purpose, and creator make it public access for data and source code.
+
+File can access and download in Github: [alfandash github](https://github.com/alfandash/algoritma-lbb-classification-2)
+
+Result of this rmardown can access in RPubs: [alfandash rpubs](https://rpubs.com/alfandash/lbb-classification-2)
+
+
 
